@@ -1,0 +1,40 @@
+# The build context is uploaded to the daemon in full before the first
+# instruction runs. Anything listed here is therefore not merely excluded from
+# the image - it never leaves the working directory.
+#
+# That matters twice over: `.cache/` holds multi-gigabyte scanner databases and
+# would make every build minutes slower, and `artifacts/` holds the ephemeral
+# cosign private key. A secret that is only in the context and never COPYed is
+# still a secret handed to the builder, and with BuildKit's cache mounts it is
+# still a secret that can end up on disk somewhere else.
+
+.cache/
+artifacts/
+
+.git/
+.github/
+.gitattributes
+.gitignore
+
+# Nothing outside app/ is ever COPYed into the image; excluding it keeps the
+# context small and makes an accidental COPY of the pipeline itself impossible.
+deploy/
+docs/
+pipeline/
+policies/
+security/
+Makefile
+README.md
+LICENSE
+pyproject.toml
+
+# Python and editor noise
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.idea/
+.vscode/

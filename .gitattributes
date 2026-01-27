@@ -1,0 +1,27 @@
+# The pipeline scripts run inside Linux containers. A CRLF checkout turns every
+# one of them into "bad interpreter: no such file or directory", so line endings
+# are fixed here rather than left to each contributor's core.autocrlf.
+* text=auto eol=lf
+*.sh text eol=lf
+Makefile text eol=lf
+Dockerfile* text eol=lf
+
+# Исключение: батники Windows без CRLF не запускаются.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Бинарные: не сравниваются построчно и не трогаются конвертацией.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.bz2 binary
+
+# YAML здесь — основное содержание, а не конфигурация вокруг кода: без этого
+# GitHub считает языком то вспомогательное, что осталось.
+*.yml linguist-detectable=true
+*.yaml linguist-detectable=true

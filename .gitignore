@@ -1,0 +1,35 @@
+# Pipeline output: SBOMs, scanner reports, exported image tarballs, the
+# generated scanner ignore files and the ephemeral demo signing key. All of it
+# is reproducible with `make demo-pass`.
+artifacts/
+
+# Belt and braces. The rules above already cover everything the pipeline writes,
+# but a signing key committed by accident is not a mistake you get to undo: the
+# key is compromised from the moment it is pushed, and rewriting history does
+# not un-clone it. So the file types are excluded by name as well, wherever they
+# turn up.
+*.tar
+*.tar.gz
+*.key
+*.pem
+*.p12
+*.pfx
+cosign.key
+
+# Scanner vulnerability databases.
+.cache/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
