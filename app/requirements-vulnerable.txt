@@ -1,0 +1,10 @@
+# Deliberately outdated dependency set for the failure demo. Not a lockfile:
+# no hashes, no transitive pins, versions chosen because public advisories
+# already exist for them. Never install this outside the demo.
+fastapi==0.68.0
+uvicorn==0.15.0
+pydantic==1.8.2
+jinja2==2.11.3
+pyyaml==5.3.1
+requests==2.25.1
+urllib3==1.26.5

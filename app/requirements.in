@@ -1,0 +1,5 @@
+# Direct runtime dependencies of the demo service.
+# Compile with `make lock`; never edit requirements.txt by hand.
+fastapi
+uvicorn[standard]
+pydantic
