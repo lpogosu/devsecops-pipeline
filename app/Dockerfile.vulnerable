@@ -1,0 +1,25 @@
+# Vulnerable variant: exists only so the gates can be demonstrated firing.
+#
+# It is never pushed anywhere. Three independent controls must reject it:
+#   1. pipeline/deps.sh   - unpinned, outdated direct dependencies with CVEs
+#   2. pipeline/scan.sh   - end-of-life base image with OS package CVEs
+#   3. pipeline/policy.sh - Dockerfile policy violations (root user, no healthcheck)
+#
+# If `make demo-fail` ever passes, a gate has silently stopped working.
+
+# Debian bullseye + Python 3.9: both past their support window.
+FROM python:3.9-slim-bullseye
+
+WORKDIR /srv
+
+# No --require-hashes, no lockfile: whatever the index serves is what ships.
+COPY app/requirements-vulnerable.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app/main.py /srv/app/main.py
+
+EXPOSE 8000
+
+# No USER directive: the process runs as root inside the container.
+# No HEALTHCHECK: an unhealthy container stays in the load-balancer pool.
+ENTRYPOINT ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
