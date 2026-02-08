@@ -1,0 +1,12 @@
+# Tooling for the pipeline helpers and the test suite. Pinned so that a CI run
+# and a laptop disagree about findings for real reasons, not because someone
+# picked up a different linter release.
+#
+# The scanners themselves are not here: they are pinned as container images in
+# pipeline/lib.sh, so the pipeline does not depend on a Python environment.
+httpx==0.28.1
+mypy==2.3.1
+pytest==8.2.2
+PyYAML==6.0.3
+ruff==0.16.6
+types-PyYAML==6.0.12.20260906
