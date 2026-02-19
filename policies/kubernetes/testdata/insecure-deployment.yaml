@@ -1,0 +1,36 @@
+# Fixture for the policy's own regression check: pipeline/policy.sh asserts that
+# this manifest is rejected. A policy nobody has watched fail is a policy nobody
+# knows is still wired up.
+#
+# It is intentionally the kind of manifest that gets written in a hurry: a
+# floating tag, root, no limits, host access, and a mounted docker socket.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: insecure-example
+  namespace: demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: insecure-example
+  template:
+    metadata:
+      labels:
+        app: insecure-example
+    spec:
+      hostNetwork: true
+      hostPID: true
+      containers:
+        - name: app
+          image: release-metadata:latest
+          securityContext:
+            privileged: true
+            allowPrivilegeEscalation: true
+          volumeMounts:
+            - name: docker-socket
+              mountPath: /var/run/docker.sock
+      volumes:
+        - name: docker-socket
+          hostPath:
+            path: /var/run/docker.sock
