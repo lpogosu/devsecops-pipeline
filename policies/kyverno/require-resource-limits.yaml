@@ -1,0 +1,41 @@
+# Risk: a container with no memory limit can consume the node and evict every
+# other pod on it; with no CPU request the scheduler cannot reason about the
+# node at all. A workload that takes down its neighbours is a denial of service
+# whether or not anyone did it on purpose, and a compromised container with no
+# limits is a very effective one.
+#
+# A CPU *limit* is deliberately not required. CFS throttling on a limit that is
+# merely conservative causes latency that looks like a bug for weeks, and the
+# scheduling protection comes from the request. Memory is different: it is not
+# compressible, so the limit is the only thing standing between one leak and a
+# node-wide eviction storm.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+  annotations:
+    policies.kyverno.io/title: Require CPU and memory limits
+    policies.kyverno.io/category: Resource Management
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-requests-and-limits
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "Every container must declare CPU and memory requests and a memory limit."
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  requests:
+                    cpu: "?*"
+                    memory: "?*"
+                  limits:
+                    memory: "?*"

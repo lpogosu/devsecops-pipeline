@@ -1,0 +1,64 @@
+# Risk: everything earlier in this pipeline - the scan, the SBOM, the policy
+# checks - describes an artifact that CI produced. None of it says anything
+# about the image the cluster is actually pulling. Without verification at
+# admission, a compromised registry entry, a mistyped image name pointing at a
+# typosquatted repository, or a manual `kubectl set image` bypasses the whole
+# chain.
+#
+# The attestor below is keyless: the signature must carry a Fulcio certificate
+# whose subject is this repository's workflow and whose issuer is GitHub's OIDC
+# provider. That is strictly stronger than "signed by a key we trust", because a
+# key says only that somebody who holds it signed something, while the
+# certificate says which workflow of which repository produced the artifact.
+#
+# `mutateDigest: true` rewrites the tag to the digest that was actually
+# verified, closing the window where a tag could be re-pointed between the
+# admission check and the kubelet's pull.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-image-signature
+  annotations:
+    policies.kyverno.io/title: Require a verified signature and SBOM attestation
+    policies.kyverno.io/category: Supply Chain
+    policies.kyverno.io/severity: critical
+    policies.kyverno.io/subject: Pod
+spec:
+  validationFailureAction: Enforce
+  # verifyImages rules reach out to the registry, so they run on admission only
+  # rather than continuously re-scanning every existing pod.
+  background: false
+  webhookTimeoutSeconds: 30
+  rules:
+    - name: verify-release-metadata-signature
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/lpogosu/devsecops-pipeline/*"
+          mutateDigest: true
+          verifyDigest: true
+          required: true
+          attestors:
+            - count: 1
+              entries:
+                - keyless:
+                    subject: "https://github.com/lpogosu/devsecops-pipeline/.github/workflows/security.yml@refs/heads/main"
+                    issuer: "https://token.actions.githubusercontent.com"
+                    rekor:
+                      url: https://rekor.sigstore.dev
+          # The SBOM attestation must exist and must have been produced by the
+          # same workflow identity. An SBOM anyone can attach proves nothing.
+          attestations:
+            - type: https://spdx.dev/Document
+              attestors:
+                - count: 1
+                  entries:
+                    - keyless:
+                        subject: "https://github.com/lpogosu/devsecops-pipeline/.github/workflows/security.yml@refs/heads/main"
+                        issuer: "https://token.actions.githubusercontent.com"
+                        rekor:
+                          url: https://rekor.sigstore.dev
