@@ -1,0 +1,34 @@
+# Risk: the default capability set granted to a container includes NET_RAW,
+# which is enough to forge and sniff traffic on the pod network, and CHOWN and
+# FOWNER, which are enough to tamper with mounted files regardless of their
+# ownership. An HTTP service needs none of them, so the safe default is to drop
+# everything and add back only what a workload can justify.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-drop-capabilities
+  annotations:
+    policies.kyverno.io/title: Require dropping all capabilities
+    policies.kyverno.io/category: Pod Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-drop-all
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "Every container must drop ALL capabilities; add back only what the workload needs."
+        foreach:
+          - list: "request.object.spec.containers"
+            deny:
+              conditions:
+                any:
+                  - key: "ALL"
+                    operator: AnyNotIn
+                    value: "{{ element.securityContext.capabilities.drop || `[]` }}"

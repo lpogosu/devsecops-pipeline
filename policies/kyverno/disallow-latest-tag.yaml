@@ -1,0 +1,47 @@
+# Risk: `:latest` and untagged images are mutable pointers. Whatever was
+# scanned, signed and reviewed is not necessarily what the kubelet pulls, and
+# after an incident there is no way to say which build was running or to roll
+# back to the one that worked.
+#
+# This is the admission-time twin of the same rule in
+# policies/kubernetes/kubernetes.rego. CI proves the manifest in git is clean;
+# this proves that whatever reached the API server is clean, including the
+# `kubectl set image` somebody ran at 3am.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest-tag
+  annotations:
+    policies.kyverno.io/title: Disallow latest tag
+    policies.kyverno.io/category: Supply Chain
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-image-tag
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "An image tag is required; deploying an untagged image pulls whatever the registry serves."
+        pattern:
+          spec:
+            containers:
+              - image: "*:*"
+
+    - name: disallow-latest-tag
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "Using a mutable ':latest' tag is not allowed - deploy an immutable tag or a digest."
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest"

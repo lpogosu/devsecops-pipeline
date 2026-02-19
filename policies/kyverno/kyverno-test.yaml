@@ -1,0 +1,106 @@
+# Regression suite for the admission policies, run by `kyverno test` in
+# pipeline/policy.sh.
+#
+# Both directions are asserted for every rule. Proving that a policy rejects a
+# deliberately broken pod is half the job; proving it accepts a correct one is
+# what stops a policy from being disabled the first week it blocks a legitimate
+# deploy.
+#
+# verify-image-signature.yaml is not listed here on purpose: evaluating it means
+# contacting a registry and Rekor, which would make this suite depend on network
+# reachability and on a signature that only exists after a real release. It is
+# exercised end to end by pipeline/sign.sh instead.
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: admission-controls
+policies:
+  - disallow-latest-tag.yaml
+  - require-non-root.yaml
+  - require-resource-limits.yaml
+  - require-drop-capabilities.yaml
+resources:
+  - resources/compliant-pod.yaml
+  - resources/insecure-pod.yaml
+results:
+  - policy: disallow-latest-tag
+    rule: require-image-tag
+    kind: Pod
+    resources:
+      - release-metadata
+    result: pass
+  - policy: disallow-latest-tag
+    rule: disallow-latest-tag
+    kind: Pod
+    resources:
+      - release-metadata
+    result: pass
+  - policy: disallow-latest-tag
+    rule: disallow-latest-tag
+    kind: Pod
+    resources:
+      - insecure-example
+    result: fail
+
+  - policy: require-non-root
+    rule: require-run-as-non-root
+    kind: Pod
+    resources:
+      - release-metadata
+    result: pass
+  - policy: require-non-root
+    rule: require-run-as-non-root
+    kind: Pod
+    resources:
+      - insecure-example
+    result: fail
+  - policy: require-non-root
+    rule: disallow-privilege-escalation
+    kind: Pod
+    resources:
+      - release-metadata
+    result: pass
+  - policy: require-non-root
+    rule: disallow-privilege-escalation
+    kind: Pod
+    resources:
+      - insecure-example
+    result: fail
+  - policy: require-non-root
+    rule: disallow-privileged-containers
+    kind: Pod
+    resources:
+      - release-metadata
+    result: pass
+  - policy: require-non-root
+    rule: disallow-privileged-containers
+    kind: Pod
+    resources:
+      - insecure-example
+    result: fail
+
+  - policy: require-resource-limits
+    rule: require-requests-and-limits
+    kind: Pod
+    resources:
+      - release-metadata
+    result: pass
+  - policy: require-resource-limits
+    rule: require-requests-and-limits
+    kind: Pod
+    resources:
+      - insecure-example
+    result: fail
+
+  - policy: require-drop-capabilities
+    rule: require-drop-all
+    kind: Pod
+    resources:
+      - release-metadata
+    result: pass
+  - policy: require-drop-capabilities
+    rule: require-drop-all
+    kind: Pod
+    resources:
+      - insecure-example
+    result: fail
