@@ -1,0 +1,46 @@
+# Accepted findings. This file is the only way a known vulnerability is allowed
+# past the gates, and every entry is a dated, owned promise to come back to it.
+#
+# Rules enforced by pipeline/allowlist.py, and therefore by CI:
+#
+#   * `reason` explains why this specific finding is not exploitable here.
+#     A bare "false positive" or "not applicable" is rejected - say why.
+#   * `owner` is a personal handle, not a team alias. Somebody answers for it.
+#   * `granted` and `expires` are both mandatory and the window between them may
+#     not exceed 90 days. Anchoring the window to the grant date rather than to
+#     "now" is what makes the rule checkable: the validator can prove the leash
+#     was short when the exception was written, no matter when it runs.
+#   * `scope` limits the suppression to one stage: `image` (container scan),
+#     `deps` (source dependency scan) or `secrets` (leaked-credential scan).
+#
+# An entry past its expiry date does not break the tooling - it simply stops
+# suppressing. The finding comes back, the gate judges it again on merit, and
+# the run is marked with a lapsed-exception warning. That is deliberate: an
+# exception that quietly outlives its review is a decision to ship the
+# vulnerability forever, and breaking the scanner instead would only teach
+# people to disable the scanner.
+#
+# Renewal is a pull request that moves `granted` forward and restates the
+# reason. Renewal is meant to be cheap; the review, not the paperwork, is
+# the part that has to happen.
+
+version: 1
+
+entries:
+  - id: CVE-2025-15367
+    scope: image
+    packages:
+      - python
+    reason: >-
+      Affects the CPython interpreter in the base image. The only published fix
+      is 3.15.0a6, and shipping an alpha interpreter to production trades a
+      medium-severity issue for an unsupported runtime, which is the worse
+      trade. Recorded rather than left implicit because the finding sits just
+      below the blocking threshold today: if the threshold is ever lowered, this
+      decision must resurface as a decision instead of silently blocking a
+      release nobody can unblock. Revisit when 3.15 reaches a stable release or
+      when the fix is backported to 3.13.
+    owner: lpogosu
+    granted: 2026-09-07
+    expires: 2026-12-06
+    ticket: SEC-118
