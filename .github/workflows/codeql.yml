@@ -1,0 +1,48 @@
+# CodeQL complements, rather than duplicates, the semgrep stage.
+#
+# semgrep in pipeline/sast.sh matches syntax and runs in seconds on every push,
+# which is what makes it usable as a gate. CodeQL builds a dataflow model of the
+# program and finds paths from a source to a sink across function boundaries -
+# far more capable, far slower, and not something to put in front of every
+# commit. Findings land in the security tab rather than blocking a build.
+name: codeql
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "42 4 * * 3"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: analyze python
+    # Code scanning needs GitHub Advanced Security on a private repository, and
+    # without it the SARIF upload fails with "Resource not accessible by
+    # integration". Skipping while private keeps the signal honest: a red cross
+    # that only means "not entitled" trains people to ignore the whole tab.
+    if: github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          languages: python
+          # security-extended adds the lower-precision queries. The result is
+          # advisory here, so a few extra false positives cost review time
+          # rather than a blocked release.
+          queries: security-extended
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          category: /language:python

@@ -1,0 +1,113 @@
+# Proof that the gates actually close.
+#
+# A green security pipeline is evidence of nothing on its own: a scanner that
+# silently stopped running, an ignore file that grew too broad, a threshold
+# someone lowered "temporarily" - all of them look exactly like a clean repo.
+# So this workflow builds a deliberately vulnerable image and asserts that each
+# control rejects it.
+#
+# Each stage runs with continue-on-error and the following step fails the job if
+# the stage *succeeded*. The workflow is therefore green when the gates work and
+# red when they have stopped working, which is the inversion that makes it
+# useful as a required check.
+name: security-vulnerable
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "pipeline/**"
+      - "policies/**"
+      - "security/**"
+      - "app/Dockerfile.vulnerable"
+      - "app/requirements-vulnerable.txt"
+      - ".github/workflows/security-vulnerable.yml"
+  schedule:
+    - cron: "37 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-vulnerable-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates-must-block:
+    name: the gates must reject the vulnerable image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - run: pip install --requirement pipeline/requirements.txt
+
+      # --- dependency gate -------------------------------------------------
+      - name: Dependency scan (expected to fail)
+        id: deps
+        continue-on-error: true
+        run: pipeline/deps.sh vulnerable
+
+      - name: Assert the dependency gate blocked
+        if: steps.deps.outcome == 'success'
+        run: |
+          echo "::error::the dependency gate accepted a lockfile with known CVEs"
+          exit 1
+
+      # --- policy gate -----------------------------------------------------
+      - name: Dockerfile policy (expected to fail)
+        id: policy
+        continue-on-error: true
+        run: pipeline/policy.sh vulnerable
+
+      - name: Assert the policy gate blocked
+        if: steps.policy.outcome == 'success'
+        run: |
+          echo "::error::the policy gate accepted a Dockerfile that runs as root"
+          exit 1
+
+      # --- image scan gate -------------------------------------------------
+      - name: Build the vulnerable image
+        run: pipeline/build.sh vulnerable
+
+      - name: SBOM
+        run: pipeline/sbom.sh vulnerable
+
+      - name: Image scan (expected to fail)
+        id: scan
+        continue-on-error: true
+        run: pipeline/scan.sh vulnerable
+
+      - name: Assert the image scan blocked
+        if: steps.scan.outcome == 'success'
+        run: |
+          echo "::error::the image scan accepted an image with fixable CRITICAL findings"
+          exit 1
+
+      - name: Summarise
+        run: |
+          {
+            echo "### Gate verification"
+            echo
+            echo "| gate | outcome | expected |"
+            echo "|---|---|---|"
+            echo "| deps | ${{ steps.deps.outcome }} | failure |"
+            echo "| policy | ${{ steps.policy.outcome }} | failure |"
+            echo "| image scan | ${{ steps.scan.outcome }} | failure |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish the evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: blocked-build-evidence
+          path: |
+            artifacts/deps.vulnerable.json
+            artifacts/scan.vulnerable.*.json
+            artifacts/sbom.vulnerable.*.json
+          retention-days: 14

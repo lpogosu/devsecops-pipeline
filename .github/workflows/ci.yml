@@ -1,0 +1,66 @@
+# Fast feedback: linters, unit tests and the policy suites. Nothing here builds
+# an image, so it finishes in a couple of minutes and can be a required check on
+# every pull request. The heavier supply-chain chain lives in security.yml.
+#
+# Action versions are pinned to commit SHAs, not tags. A tag is a mutable
+# pointer and an action runs with access to the workflow token, so "pin your
+# base image but float your actions" is not a coherent position.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install tooling
+        # Two invocations: app/requirements.txt is hash-verified, and pip
+        # refuses to mix hashed and unhashed requirements in one run.
+        run: |
+          python -m pip install --upgrade pip
+          pip install --require-hashes --requirement app/requirements.txt
+          pip install --requirement pipeline/requirements.txt
+
+      - name: Lint shell
+        run: pipeline/lint.sh
+
+      - name: Lint Python
+        run: |
+          ruff check .
+          ruff format --check .
+          mypy
+
+      - name: Unit tests
+        run: pytest
+
+      - name: Policy suites
+        run: pipeline/policy.sh clean
+
+  dependency-review:
+    # Blocks a pull request that introduces a dependency with a known advisory,
+    # at the moment it is proposed rather than after it is merged and built.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
