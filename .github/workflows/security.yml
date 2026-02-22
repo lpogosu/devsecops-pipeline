@@ -1,0 +1,154 @@
+# The supply-chain chain on the clean image. Every gate here must pass.
+#
+# The jobs call the same pipeline/*.sh scripts a developer runs locally. That is
+# deliberate: a CI job assembled from a dozen marketplace actions cannot be
+# reproduced on a laptop, so nobody debugs it, so it slowly stops meaning
+# anything. Scanner versions are pinned in pipeline/lib.sh and are identical in
+# both places.
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly: new advisories land against code that has not changed, and lapsed
+    # allowlist entries have to surface even when nobody is deploying.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source:
+    name: source checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Secret scanning over history needs the history.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - run: pip install --requirement pipeline/requirements.txt
+
+      - name: Static analysis
+        run: pipeline/sast.sh
+        env:
+          SEMGREP_REGISTRY: "1"
+
+      - name: Dependency scan
+        run: pipeline/deps.sh clean
+
+      - name: Secret scan (working tree)
+        run: pipeline/secrets.sh worktree
+
+      - name: Secret scan (full history)
+        # A credential removed in a later commit is still fetchable by anyone
+        # with a clone, so HEAD being clean proves nothing.
+        run: pipeline/secrets.sh history
+
+      - name: Policy suites
+        run: pipeline/policy.sh clean
+
+      - name: Fail on lapsed exceptions
+        if: github.event_name == 'schedule'
+        # Only the scheduled run is strict. Blocking a developer's pull request
+        # because somebody else's exception expired overnight teaches people to
+        # route around the control.
+        run: python pipeline/allowlist.py validate --strict
+
+  image:
+    name: build, sbom and scan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - run: pip install --requirement pipeline/requirements.txt
+
+      - name: Build
+        run: pipeline/build.sh clean
+
+      - name: SBOM
+        run: pipeline/sbom.sh clean
+
+      - name: Image scan
+        run: pipeline/scan.sh clean
+
+      - name: Publish SBOMs and scanner reports
+        # Uploaded on failure too: the reports are what a developer needs in
+        # order to understand why the gate closed.
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: supply-chain-evidence
+          path: |
+            artifacts/sbom.clean.*.json
+            artifacts/scan.clean.*.json
+            artifacts/trivyignore.yaml
+          retention-days: 30
+
+  release:
+    name: sign and attest
+    needs: [source, image]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      # The OIDC token is what makes keyless signing possible: cosign exchanges
+      # it for a short-lived Fulcio certificate that names this workflow.
+      id-token: write
+    # Job-level, not step-level: build.sh tags the image from these and sign.sh
+    # looks it up by the same name. Setting them on the signing step alone builds
+    # one image and then signs a different, non-existent one.
+    env:
+      REGISTRY_HOST: ghcr.io/${{ github.repository_owner }}
+      IMAGE_REPO: devsecops-pipeline/release-metadata
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - run: pip install --requirement pipeline/requirements.txt
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v2.6.1
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and SBOM
+        run: |
+          pipeline/build.sh clean
+          pipeline/sbom.sh clean
+
+      - name: Sign the image and attest the SBOM
+        run: pipeline/sign.sh sign clean
+
+      - name: Verify what was just published
+        # Signing and then not verifying is how a broken signing step survives
+        # for months. The verification asserts the workflow identity, not merely
+        # that some signature exists.
+        env:
+          REGISTRY_HOST: ghcr.io/${{ github.repository_owner }}
+          IMAGE_REPO: devsecops-pipeline/release-metadata
+          OIDC_IDENTITY_REGEXP: ^https://github.com/${{ github.repository }}/
+        run: pipeline/sign.sh verify clean
