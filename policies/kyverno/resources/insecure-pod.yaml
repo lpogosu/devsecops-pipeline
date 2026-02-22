@@ -1,0 +1,16 @@
+# Fixture that every admission policy in this directory must reject. Its only
+# purpose is to keep the policies honest: `kyverno test` asserts a `fail` result
+# for each rule, so a policy that stops matching is caught in CI rather than in
+# production.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: insecure-example
+  namespace: demo
+spec:
+  containers:
+    - name: app
+      image: release-metadata:latest
+      securityContext:
+        privileged: true
+        allowPrivilegeEscalation: true

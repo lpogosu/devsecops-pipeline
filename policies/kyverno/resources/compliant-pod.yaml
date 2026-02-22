@@ -1,0 +1,31 @@
+# The shape every workload in this repository is expected to have. Kept as a
+# Pod rather than a Deployment because the admission policies match Pods, which
+# is what the API server actually sees after the controllers are done.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: release-metadata
+  namespace: demo
+spec:
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: app
+      image: ghcr.io/lpogosu/devsecops-pipeline/release-metadata:1.0.0
+      securityContext:
+        allowPrivilegeEscalation: false
+        privileged: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi
+        limits:
+          memory: 128Mi
